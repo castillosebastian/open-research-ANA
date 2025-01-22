@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Agent Graph",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/agent/graph.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "python": "/home/sebacastillo/.open-research-ana/bin/python"
+        }
+    ]
+} 

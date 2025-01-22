@@ -1,4 +1,5 @@
 from importlib.resources import open_text
+from pathlib import Path
 
 from dotenv import load_dotenv
 from typing import  Literal, cast
@@ -12,7 +13,7 @@ from langgraph.graph import StateGraph, START, END, add_messages
 from langgraph.types import Command
 from langchain_core.runnables import RunnableConfig
 
-from copilotkit.langchain import copilotkit_emit_state, copilotkit_customize_config, copilotkit_exit, copilotkit_emit_message
+from copilotkit.langgraph import copilotkit_emit_state, copilotkit_customize_config, copilotkit_exit, copilotkit_emit_message
 
 from state import ResearchState
 from config import Config
@@ -21,7 +22,9 @@ from tools.tavily_extract import tavily_extract
 from tools.outline_writer import outline_writer
 from tools.section_writer import section_writer
 
-load_dotenv('.env')
+# Get absolute path to the .env file
+env_path = Path(__file__).parent / '.env'
+load_dotenv(env_path)
 
 cfg = Config()
 
@@ -52,6 +55,7 @@ class MasterAgent:
 
     # Define an async custom research tool node that access and updates the research state
     async def tool_node(self, state: ResearchState, config: RunnableConfig):
+        # Add breakpoint here to inspect tool calls
         config = copilotkit_customize_config(config, emit_messages=False)
         msgs = []
         tool_state = {}
@@ -117,7 +121,7 @@ class MasterAgent:
         return state
 
     async def call_model(self, state: ResearchState, config: RunnableConfig) -> Literal["tools", "human", "__end__"]:
-        # Check and cast the last message if needed
+        # Add breakpoint here to inspect the state before processing
         last_message = state['messages'][-1]
         if cfg.DEBUG:
              print(f"**In call_model**, last_message: {last_message}")
@@ -175,23 +179,24 @@ class MasterAgent:
         ainvoke_kwargs = {}
         ainvoke_kwargs["parallel_tool_calls"] = False
 
-        response = await cfg.FACTUAL_LLM.bind_tools(self.tools + state["copilotkit"]["actions"],
-                                          **ainvoke_kwargs).ainvoke([
-            SystemMessage(
-                content=prompt
-            ),
+        # Get copilotkit actions with a default empty list if not present
+        copilotkit_actions = state.get("copilotkit", {}).get("actions", [])
+
+        response = await cfg.FACTUAL_LLM.bind_tools(
+            self.tools + copilotkit_actions,
+            **ainvoke_kwargs
+        ).ainvoke([
+            SystemMessage(content=prompt),
             *state["messages"],
         ], config)
 
         response = cast(AIMessage, response)
 
-        actions = state["copilotkit"]["actions"]
-
+        # Use the same copilotkit_actions variable we defined above
         if response.tool_calls:
             for tool_call in response.tool_calls:
                 # If the LLM makes a frontend tool call, route to the "human" node
-                # This essentially checks if the tool call is 'review_proposal', as it is the only frontend tool at the moment.
-                if any(action.get("name") == tool_call.get("name") for action in actions):
+                if any(action.get("name") == tool_call.get("name") for action in copilotkit_actions):
                     return Command(
                         goto="human",
                         update={
@@ -213,23 +218,30 @@ class MasterAgent:
             }
         )
 
-# #Run the async function
-#    # used for running graph locally
-#    #Define an async function to run your graph code
-#     async def run_graph(self):
-#         graph = self.graph
-#         messages = [
-#             HumanMessage(content="Please run research on Tavily company")
-#         ]
-#         async for s in graph.astream({"messages": messages}, stream_mode="values"):
-#             message = s["messages"][-1]
-#             if isinstance(message, tuple):
-#                 print(message)
-#             else:
-#                 message.pretty_print()
-#
-#
-# #Run the async function
-# asyncio.run(MasterAgent().run_graph())
+#Run the async function
+    # used for running graph locally
+    #Define an async function to run your graph code
+    # async def run_graph(self):
+    #     graph = self.graph
+    #     initial_state = {
+    #         "messages": [HumanMessage(content="Please run research on Tavily company")],
+    #         "copilotkit": {"actions": []},  # Add required copilotkit structure
+    #         "outline": {},
+    #         "sections": [],
+    #         "sources": {},
+    #         "proposal": {},
+    #         "logs": [],
+    #         "tool": {}
+    #     }
+    #     async for s in graph.astream(initial_state, stream_mode="values"):
+    #         message = s["messages"][-1]
+    #         if isinstance(message, tuple):
+    #             print(message)
+    #         else:
+    #             message.pretty_print()
+
+
+#Run the async function
+#asyncio.run(MasterAgent().run_graph())
 
 graph = MasterAgent().graph
